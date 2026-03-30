@@ -22,7 +22,7 @@
         return;
     }
 
-    // ===================== TRACK STORAGE =====================
+    // TRACK STORAGE
     let localTracks = {};
     let remoteTracks = {};
 
@@ -54,9 +54,16 @@
 
     updateLocalTracks();
 
-    fetch(
-        "https://raw.githubusercontent.com/Hazzz895/FckCensorData/refs/heads/main/list.json",
-    )
+    fetch("https://api.github.com/gists/c356a73d2d36d218b5cbd67651e387c0")
+        .then((r) => r.json())
+        .then((data) => {
+            const file = data.files?.["list.json"];
+            if (!file?.raw_url) {
+                throw new Error("raw_url not found for list.json");
+            }
+
+            return fetch(file.raw_url);
+        })
         .then((r) => r.json())
         .then((data) => {
             remoteTracks = data.tracks;
@@ -66,7 +73,7 @@
             console.warn("[FckCensor] Failed to load remote tracks:", e),
         );
 
-    // ===================== PATCH =====================
+    // PATCH
     const proto = fileInfoModule.v.prototype;
     const originalGetFileInfo = proto.getFileInfo;
     const originalGetFileInfoBatch = proto.getFileInfoBatch;
