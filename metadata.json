@@ -1,7 +1,7 @@
 {
     "name": "FckCensor",
     "author": "Hazzz895",
-    "version": "0.0.2",
+    "version": "0.1.0",
     "description": "Позволяет локально подменивать треки",
     "css": "style.css",
     "script": "script.js",
@@ -12,7 +12,6 @@
     "dependencies": [],
     "allowedUrls": [
         "https://github.com/",
-        "https://raw.githubusercontent.com",
-        "https://dl2.mp3party.net/"
+        "https://raw.githubusercontent.com"
     ]
 }
