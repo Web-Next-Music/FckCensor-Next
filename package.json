@@ -1,0 +1,23 @@
+{
+    "name": "fckcensor-next",
+    "themeName": "FckCensor Next",
+    "version": "1.0.0-beta.1",
+    "author": "Diramix",
+    "license": "ISC",
+    "scripts": {
+        "build": "ymtm build"
+    },
+    "build": {
+        "package": [
+            "nextmusic"
+        ]
+    },
+    "nextmusic": {
+        "tarGz": {
+            "artifactName": "${theme.name}_${theme.version}_${build.package}.tar.gz"
+        }
+    },
+    "devDependencies": {
+        "ymtm": "github:Diramix/ymtm#2.1.0"
+    }
+}
