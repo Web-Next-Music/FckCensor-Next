@@ -35,7 +35,7 @@
     }
 
     function updateLocalTracks() {
-        fetch("http://localhost:2007/assets?name=FckCensor")
+        fetch("http://localhost:2007/assets?name=FckCensor Next")
             .then((r) => r.json())
             .then((data) => {
                 Object.keys(data.files).forEach((file) => {
@@ -43,7 +43,7 @@
                     localTracks[id] =
                         "http://localhost:2007/assets/" +
                         file +
-                        "?name=FckCensor&";
+                        "?name=FckCensor Next&";
                 });
                 console.debug("[FckCensor] Local tracks:", localTracks);
             })
