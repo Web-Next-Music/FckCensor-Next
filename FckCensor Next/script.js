@@ -33,7 +33,6 @@
         console.error("[FckCensor] appRequire is null, aborting");
         return;
     }
-    console.debug("[FckCensor] appRequire OK");
 
     try {
         fileInfoModule = appRequire(63974);
@@ -48,7 +47,6 @@
         );
         return;
     }
-    console.debug("[FckCensor] FileInfo module OK");
 
     // ── track storage ─────────────────────────────────────────────────────────
     let remoteTracks = {};
@@ -62,6 +60,26 @@
             console.warn("[FckCensor] getReplaced error:", e);
         }
         return null;
+    }
+
+    function makeDownloadInfo(id, url, quality) {
+        return {
+            downloadInfo: {
+                trackId: id,
+                realId: id,
+                quality: quality ?? "nq",
+                codec: "mp3",
+                bitrate: 320,
+                transport: "raw",
+                key: "",
+                size: 0,
+                gain: false,
+                urls: [url],
+                url: url,
+            },
+            responseTime: 0,
+            url: url,
+        };
     }
 
     // ── constants ─────────────────────────────────────────────────────────────
@@ -110,9 +128,7 @@
 
     // ── fetch helpers ─────────────────────────────────────────────────────────
 
-    // Возвращает { tracks, rawUrl } или null при любой ошибке
     function fetchGist() {
-        console.debug("[FckCensor] Fetching gist index...");
         return fetch(GIST_URL)
             .then(function (r) {
                 if (!r.ok) throw new Error("Gist index HTTP " + r.status);
@@ -123,16 +139,11 @@
                 if (!file?.raw_url)
                     throw new Error("raw_url not found in gist");
                 const rawUrl = file.raw_url;
-                console.debug("[FckCensor] Gist raw_url:", rawUrl);
                 return fetch(rawUrl).then(function (r2) {
                     if (!r2.ok) throw new Error("Gist raw HTTP " + r2.status);
                     return r2.json().then(function (parsed) {
                         if (!parsed?.tracks)
                             throw new Error("No .tracks in gist response");
-                        console.debug(
-                            "[FckCensor] Gist tracks count:",
-                            Object.keys(parsed.tracks).length,
-                        );
                         return { tracks: parsed.tracks, rawUrl: rawUrl };
                     });
                 });
@@ -143,9 +154,7 @@
             });
     }
 
-    // Возвращает { tracks } или null при любой ошибке
     function fetchGithubRaw() {
-        console.debug("[FckCensor] Fetching GitHub Raw...");
         return fetch(GITHUB_RAW_URL)
             .then(function (r) {
                 if (!r.ok) throw new Error("GitHub Raw HTTP " + r.status);
@@ -154,10 +163,6 @@
             .then(function (parsed) {
                 if (!parsed?.tracks)
                     throw new Error("No .tracks in GitHub Raw response");
-                console.debug(
-                    "[FckCensor] GitHub Raw tracks count:",
-                    Object.keys(parsed.tracks).length,
-                );
                 return { tracks: parsed.tracks };
             })
             .catch(function (e) {
@@ -166,9 +171,7 @@
             });
     }
 
-    // Возвращает tracks {} или {} при любой ошибке
     function fetchLocalCache(url, label) {
-        console.debug("[FckCensor] Trying local cache:", label);
         return fetch(url)
             .then(function (r) {
                 if (!r.ok) throw new Error(label + " HTTP " + r.status);
@@ -176,11 +179,6 @@
             })
             .then(function (parsed) {
                 if (!parsed?.tracks) throw new Error("No .tracks in " + label);
-                console.debug(
-                    "[FckCensor] Local cache tracks:",
-                    label,
-                    Object.keys(parsed.tracks).length,
-                );
                 return parsed.tracks;
             })
             .catch(function (e) {
@@ -192,18 +190,13 @@
     // ── main load logic ───────────────────────────────────────────────────────
     Promise.all([fetchGist(), fetchGithubRaw()])
         .then(function (results) {
-            const gistResult = results[0]; // { tracks, rawUrl } | null
-            const githubResult = results[1]; // { tracks }         | null
+            const gistResult = results[0];
+            const githubResult = results[1];
 
             const gistOk = gistResult !== null;
             const githubOk = githubResult !== null;
 
-            console.debug(
-                "[FckCensor] Sources: gist=" + gistOk + " github=" + githubOk,
-            );
-
             if (gistOk || githubOk) {
-                // Мерж: github как база, gist поверх — gist приоритетнее
                 const base = githubOk ? githubResult.tracks : {};
                 const override = gistOk ? gistResult.tracks : {};
                 remoteTracks = Object.assign({}, base, override);
@@ -217,11 +210,9 @@
                         Object.keys(remoteTracks).length,
                 );
 
-                // Кэшируем каждый источник отдельно для fallback
                 if (gistOk) saveCache(gistResult.rawUrl, "list.json");
                 if (githubOk) saveCache(GITHUB_RAW_URL, "list_hazzz895.json");
             } else {
-                // Оба удалённых источника недоступны — пробуем локальные кэши
                 console.warn(
                     "[FckCensor] Both remote sources failed, loading from local caches...",
                 );
@@ -233,11 +224,7 @@
                         "list_hazzz895.json",
                     ),
                 ]).then(function (caches) {
-                    const cachedGithub = caches[0]; // приоритет ниже (был gist кэш, но назовём корректно)
-                    const cachedGist = caches[1];
-
-                    // Тот же порядок мержа: github-кэш как база, gist-кэш поверх
-                    remoteTracks = Object.assign({}, cachedGithub, cachedGist);
+                    remoteTracks = Object.assign({}, caches[0], caches[1]);
                     console.info(
                         "[FckCensor] Tracks from local cache: total=" +
                             Object.keys(remoteTracks).length,
@@ -246,7 +233,6 @@
             }
         })
         .catch(function (e) {
-            // Promise.all не должен сюда попасть — оба промиса уже .catch внутри
             console.error("[FckCensor] Unexpected error in load logic:", e);
         });
 
@@ -273,23 +259,7 @@
                     "→",
                     replaced.url,
                 );
-                return {
-                    downloadInfo: {
-                        trackId: trackId,
-                        realId: trackId,
-                        quality: params?.quality ?? "nq",
-                        codec: "mp3",
-                        bitrate: 320,
-                        transport: "raw",
-                        key: "",
-                        size: 0,
-                        gain: false,
-                        urls: [replaced.url],
-                        url: replaced.url,
-                    },
-                    responseTime: 0,
-                    url: replaced.url,
-                };
+                return makeDownloadInfo(trackId, replaced.url, params?.quality);
             }
         } catch (e) {
             console.warn("[FckCensor] getFileInfo patch error:", e);
@@ -299,35 +269,62 @@
 
     proto.getFileInfoBatch = async function (params, options) {
         try {
-            const trackIds = (params?.trackIds ?? []).map(String);
-            const allReplaced = trackIds.every((id) => !!getReplaced(id));
-            if (allReplaced) {
-                return trackIds.map((id) => {
+            const rawIds = params?.trackIds ?? [];
+            // trackIds может прийти строкой при автоплее
+            const isSingle = !Array.isArray(rawIds);
+            const trackIds = isSingle ? [String(rawIds)] : rawIds.map(String);
+
+            const hasAnyReplaced = trackIds.some((id) => !!getReplaced(id));
+
+            if (hasAnyReplaced) {
+                const missing = trackIds.filter((id) => !getReplaced(id));
+                let missingMap = {};
+
+                if (missing.length > 0) {
+                    const originalParams = Object.assign({}, params, {
+                        trackIds: isSingle ? missing[0] : missing,
+                    });
+                    try {
+                        let originalResults =
+                            await originalGetFileInfoBatch.call(
+                                this,
+                                originalParams,
+                                options,
+                            );
+                        // Нормализуем ответ оригинала в массив
+                        if (!Array.isArray(originalResults))
+                            originalResults = [originalResults];
+                        missing.forEach(function (id, i) {
+                            missingMap[id] = originalResults[i] ?? null;
+                        });
+                    } catch (e) {
+                        console.warn(
+                            "[FckCensor] originalGetFileInfoBatch failed for missing:",
+                            e,
+                        );
+                    }
+                }
+
+                const results = trackIds.map(function (id) {
                     const replaced = getReplaced(id);
-                    console.debug(
-                        "[FckCensor] Batch replacing track",
-                        id,
-                        "→",
-                        replaced.url,
-                    );
-                    return {
-                        downloadInfo: {
-                            trackId: id,
-                            realId: id,
-                            quality: params?.quality ?? "nq",
-                            codec: "mp3",
-                            bitrate: 320,
-                            transport: "raw",
-                            key: "",
-                            size: 0,
-                            gain: false,
-                            urls: [replaced.url],
-                            url: replaced.url,
-                        },
-                        responseTime: 0,
-                        url: replaced.url,
-                    };
+                    if (replaced) {
+                        console.debug(
+                            "[FckCensor] Batch replacing track",
+                            id,
+                            "→",
+                            replaced.url,
+                        );
+                        return makeDownloadInfo(
+                            id,
+                            replaced.url,
+                            params?.quality,
+                        );
+                    }
+                    return missingMap[id] ?? null;
                 });
+
+                // Если пришла строка — возвращаем одиночный объект, не массив
+                return isSingle ? results[0] : results;
             }
         } catch (e) {
             console.warn("[FckCensor] getFileInfoBatch patch error:", e);
