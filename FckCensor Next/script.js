@@ -1,6 +1,4 @@
 (function () {
-    console.info("[FckCensor] Script started");
-
     // ── webpack require ───────────────────────────────────────────────────────
     let webpackGlobal, appRequire, fileInfoModule;
 
@@ -56,9 +54,7 @@
             if (!trackId) return null;
             const id = String(trackId);
             if (remoteTracks[id]) return { url: remoteTracks[id] };
-        } catch (e) {
-            console.warn("[FckCensor] getReplaced error:", e);
-        }
+        } catch (e) {}
         return null;
     }
 
@@ -97,33 +93,12 @@
     function saveCache(sourceUrl, fileName) {
         try {
             if (!window.nextmusicApi?.downloadAsset) {
-                console.warn(
-                    "[FckCensor] nextmusicApi.downloadAsset not available, skipping cache for:",
-                    fileName,
-                );
                 return;
             }
             window.nextmusicApi
                 .downloadAsset(sourceUrl, fileName, ADDON_NAME)
-                .then(() =>
-                    console.debug(
-                        "[FckCensor] Cache saved:",
-                        fileName,
-                        "←",
-                        sourceUrl,
-                    ),
-                )
-                .catch((e) =>
-                    console.warn(
-                        "[FckCensor] Cache save failed for",
-                        fileName,
-                        ":",
-                        e,
-                    ),
-                );
-        } catch (e) {
-            console.warn("[FckCensor] saveCache threw:", e);
-        }
+                .catch(() => {});
+        } catch (e) {}
     }
 
     // ── fetch helpers ─────────────────────────────────────────────────────────
@@ -148,8 +123,7 @@
                     });
                 });
             })
-            .catch(function (e) {
-                console.warn("[FckCensor] Gist fetch failed:", e);
+            .catch(function () {
                 return null;
             });
     }
@@ -165,24 +139,22 @@
                     throw new Error("No .tracks in GitHub Raw response");
                 return { tracks: parsed.tracks };
             })
-            .catch(function (e) {
-                console.warn("[FckCensor] GitHub Raw fetch failed:", e);
+            .catch(function () {
                 return null;
             });
     }
 
-    function fetchLocalCache(url, label) {
+    function fetchLocalCache(url) {
         return fetch(url)
             .then(function (r) {
-                if (!r.ok) throw new Error(label + " HTTP " + r.status);
+                if (!r.ok) throw new Error();
                 return r.json();
             })
             .then(function (parsed) {
-                if (!parsed?.tracks) throw new Error("No .tracks in " + label);
+                if (!parsed?.tracks) throw new Error();
                 return parsed.tracks;
             })
-            .catch(function (e) {
-                console.warn("[FckCensor] Local cache unavailable:", label, e);
+            .catch(function () {
                 return {};
             });
     }
@@ -201,34 +173,14 @@
                 const override = gistOk ? gistResult.tracks : {};
                 remoteTracks = Object.assign({}, base, override);
 
-                console.info(
-                    "[FckCensor] Tracks merged: github=" +
-                        Object.keys(base).length +
-                        " gist=" +
-                        Object.keys(override).length +
-                        " total=" +
-                        Object.keys(remoteTracks).length,
-                );
-
                 if (gistOk) saveCache(gistResult.rawUrl, "list.json");
                 if (githubOk) saveCache(GITHUB_RAW_URL, "list_hazzz895.json");
             } else {
-                console.warn(
-                    "[FckCensor] Both remote sources failed, loading from local caches...",
-                );
-
                 Promise.all([
-                    fetchLocalCache(LOCAL_GIST_CACHE_URL, "list.json"),
-                    fetchLocalCache(
-                        LOCAL_GITHUB_CACHE_URL,
-                        "list_hazzz895.json",
-                    ),
+                    fetchLocalCache(LOCAL_GIST_CACHE_URL),
+                    fetchLocalCache(LOCAL_GITHUB_CACHE_URL),
                 ]).then(function (caches) {
                     remoteTracks = Object.assign({}, caches[0], caches[1]);
-                    console.info(
-                        "[FckCensor] Tracks from local cache: total=" +
-                            Object.keys(remoteTracks).length,
-                    );
                 });
             }
         })
@@ -253,24 +205,15 @@
             const trackId = String(params?.trackId);
             const replaced = getReplaced(trackId);
             if (replaced) {
-                console.debug(
-                    "[FckCensor] Replacing track",
-                    trackId,
-                    "→",
-                    replaced.url,
-                );
                 return makeDownloadInfo(trackId, replaced.url, params?.quality);
             }
-        } catch (e) {
-            console.warn("[FckCensor] getFileInfo patch error:", e);
-        }
+        } catch (e) {}
         return originalGetFileInfo.apply(this, arguments);
     };
 
     proto.getFileInfoBatch = async function (params, options) {
         try {
             const rawIds = params?.trackIds ?? [];
-            // trackIds может прийти строкой при автоплее
             const isSingle = !Array.isArray(rawIds);
             const trackIds = isSingle ? [String(rawIds)] : rawIds.map(String);
 
@@ -291,29 +234,17 @@
                                 originalParams,
                                 options,
                             );
-                        // Нормализуем ответ оригинала в массив
                         if (!Array.isArray(originalResults))
                             originalResults = [originalResults];
                         missing.forEach(function (id, i) {
                             missingMap[id] = originalResults[i] ?? null;
                         });
-                    } catch (e) {
-                        console.warn(
-                            "[FckCensor] originalGetFileInfoBatch failed for missing:",
-                            e,
-                        );
-                    }
+                    } catch (e) {}
                 }
 
                 const results = trackIds.map(function (id) {
                     const replaced = getReplaced(id);
                     if (replaced) {
-                        console.debug(
-                            "[FckCensor] Batch replacing track",
-                            id,
-                            "→",
-                            replaced.url,
-                        );
                         return makeDownloadInfo(
                             id,
                             replaced.url,
@@ -323,14 +254,9 @@
                     return missingMap[id] ?? null;
                 });
 
-                // Если пришла строка — возвращаем одиночный объект, не массив
                 return isSingle ? results[0] : results;
             }
-        } catch (e) {
-            console.warn("[FckCensor] getFileInfoBatch patch error:", e);
-        }
+        } catch (e) {}
         return originalGetFileInfoBatch.apply(this, arguments);
     };
-
-    console.info("[FckCensor] Successfully initialized!");
 })();
