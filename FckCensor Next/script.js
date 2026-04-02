@@ -53,29 +53,281 @@
         try {
             if (!trackId) return null;
             const id = String(trackId);
-            if (remoteTracks[id]) return { url: remoteTracks[id] };
+            return remoteTracks[id] ?? null;
         } catch (e) {}
         return null;
     }
 
-    function makeDownloadInfo(id, url, quality) {
-        return {
-            downloadInfo: {
-                trackId: id,
-                realId: id,
-                quality: quality ?? "nq",
-                codec: "mp3",
-                bitrate: 320,
-                transport: "raw",
-                key: "",
-                size: 0,
-                gain: false,
-                urls: [url],
-                url: url,
-            },
-            responseTime: 0,
-            url: url,
-        };
+    // ── duration cache + fetch ────────────────────────────────────────────────
+    const durationCache = {};
+
+    function fetchDuration(url) {
+        if (durationCache[url] !== undefined) {
+            return Promise.resolve(durationCache[url]);
+        }
+        return fetch(url)
+            .then(function (r) {
+                return r.arrayBuffer();
+            })
+            .then(function (buf) {
+                return new Promise(function (resolve, reject) {
+                    try {
+                        const ctx = new (
+                            window.AudioContext || window.webkitAudioContext
+                        )();
+                        ctx.decodeAudioData(
+                            buf,
+                            function (decoded) {
+                                ctx.close();
+                                durationCache[url] = decoded.duration;
+                                resolve(decoded.duration);
+                            },
+                            reject,
+                        );
+                    } catch (e) {
+                        reject(e);
+                    }
+                });
+            })
+            .catch(function (e) {
+                console.warn("[FckCensor] fetchDuration failed:", e);
+                return null;
+            });
+    }
+
+    // ── patch queue duration — all known paths ────────────────────────────────
+    function patchQueueDuration(trackId, durationMs) {
+        const id = String(trackId);
+        let patched = 0;
+
+        try {
+            // Path 1: via _ymPlayers (filled by api.js)
+            const players = window._ymPlayers ?? [];
+            for (const player of players) {
+                const entityList =
+                    player?.queueController?.playerQueue?.queueState?.entityList
+                        ?.value;
+                if (!Array.isArray(entityList)) continue;
+                for (const entry of entityList) {
+                    const meta = entry?.entity?.entityData?.meta;
+                    if (!meta) continue;
+                    if (String(meta.id) === id || String(meta.realId) === id) {
+                        meta.durationMs = durationMs;
+                        patched++;
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn("[FckCensor] patchQueueDuration path1 failed:", e);
+        }
+
+        try {
+            // Path 2: traverse React fiber directly (independent of _ymPlayers)
+            const VE = appRequire(46663)?.VE;
+            if (!VE) return;
+
+            const rootEl = document.getElementById("__next") || document.body;
+            const fiberKey = Object.keys(rootEl).find((k) =>
+                k.startsWith("__reactFiber"),
+            );
+            if (!fiberKey) return;
+
+            function walkFiber(fiber, depth) {
+                if (!fiber || depth > 60) return;
+
+                // Look for entityList in memoizedState
+                let state = fiber.memoizedState;
+                while (state) {
+                    patchInValue(state.memoizedState, id, durationMs);
+                    state = state.next;
+                }
+
+                // And in stateNode if it's a player instance
+                if (fiber.stateNode instanceof VE) {
+                    const entityList =
+                        fiber.stateNode?.queueController?.playerQueue
+                            ?.queueState?.entityList?.value;
+                    if (Array.isArray(entityList)) {
+                        for (const entry of entityList) {
+                            const meta = entry?.entity?.entityData?.meta;
+                            if (!meta) continue;
+                            if (
+                                String(meta.id) === id ||
+                                String(meta.realId) === id
+                            ) {
+                                meta.durationMs = durationMs;
+                                patched++;
+                            }
+                        }
+                    }
+                }
+
+                walkFiber(fiber.child, depth + 1);
+                walkFiber(fiber.sibling, depth + 1);
+            }
+
+            function patchInValue(obj, id, durationMs, visited = new Set()) {
+                if (!obj || typeof obj !== "object" || visited.has(obj)) return;
+                visited.add(obj);
+
+                // Is this entityList?
+                if (Array.isArray(obj)) {
+                    for (const entry of obj) {
+                        const meta = entry?.entity?.entityData?.meta;
+                        if (!meta) continue;
+                        if (
+                            String(meta.id) === id ||
+                            String(meta.realId) === id
+                        ) {
+                            meta.durationMs = durationMs;
+                            patched++;
+                        }
+                    }
+                    return;
+                }
+
+                // Is this an observable with .value?
+                if ("value" in obj && Array.isArray(obj.value)) {
+                    patchInValue(obj.value, id, durationMs, visited);
+                }
+            }
+
+            walkFiber(rootEl[fiberKey], 0);
+        } catch (e) {
+            console.warn("[FckCensor] patchQueueDuration path2 failed:", e);
+        }
+
+        if (patched === 0) {
+            console.warn(
+                "[FckCensor] patchQueueDuration: track not found in queue, id=",
+                id,
+            );
+        }
+    }
+
+    // ── duration overrides for RPC ────────────────────────────────────────────
+    // Stores real duration of replaced tracks { trackId -> durationMs }
+    // siteRPCServer reads nextmusicApi.getCurrentTrack().durationMs — we patch
+    // this method here so RPC always sees the correct value.
+    window.__fckCensorDuration = window.__fckCensorDuration ?? {};
+
+    // Tracks for which fetchDuration has not finished yet.
+    // While the id is here — getCurrentTrack() returns coverUrl with suffix
+    // "#fck_pending" so RPC stores it in lastSentData.
+    // Once duration is loaded — id is removed from the set,
+    // and on the next poll() RPC sees img change → isStateChanged=true
+    // → resends the track with correct durationSec.
+    const _fckPendingDuration = new Set();
+
+    // ── apply duration with retries ───────────────────────────────────────────
+    // Queue may update later — retry several times
+    function applyDuration(trackId, replacedUrl) {
+        const id = String(trackId);
+
+        // Mark track as "duration still loading"
+        _fckPendingDuration.add(id);
+
+        fetchDuration(replacedUrl).then(function (dur) {
+            if (dur == null) {
+                _fckPendingDuration.delete(id);
+                return;
+            }
+            const durationMs = Math.round(dur * 1000);
+
+            // Save for nextmusicApi patch
+            window.__fckCensorDuration[id] = durationMs;
+
+            // Immediately
+            patchQueueDuration(trackId, durationMs);
+
+            // And again after 300ms / 800ms / 1500ms — in case queue
+            // wasn't updated yet at first call
+            [300, 800, 1500].forEach(function (delay) {
+                setTimeout(function () {
+                    patchQueueDuration(trackId, durationMs);
+                }, delay);
+            });
+
+            // Remove pending flag — on next poll() RPC will detect
+            // img change (suffix removed) and resend track
+            _fckPendingDuration.delete(id);
+        });
+    }
+
+    // ── patch nextmusicApi for RPC ─────────────────────────────────────────────
+    // Wrap getCurrentTrack() so siteRPCServer always gets correct duration
+    (function patchNextmusicApi() {
+        function wrapApi(api) {
+            if (api.__fckCensorPatched) return api;
+            api.__fckCensorPatched = true;
+
+            const origGetCurrentTrack = api.getCurrentTrack.bind(api);
+            api.getCurrentTrack = function () {
+                const track = origGetCurrentTrack();
+                if (!track) return track;
+                const id = String(track.id ?? "");
+
+                const overrideDurationMs = window.__fckCensorDuration[id];
+                const isPending = _fckPendingDuration.has(id);
+
+                // No override — return original
+                if (overrideDurationMs == null && !isPending) return track;
+
+                const patch = {
+                    durationMs: overrideDurationMs ?? track.durationMs,
+                };
+
+                // While loading — mark coverUrl to trigger RPC update
+                if (isPending && track.coverUrl) {
+                    patch.coverUrl = track.coverUrl + "#fck_pending";
+                }
+
+                return Object.assign({}, track, patch);
+            };
+
+            return api;
+        }
+
+        if (window.nextmusicApi) {
+            wrapApi(window.nextmusicApi);
+            return;
+        }
+
+        let _api = undefined;
+        try {
+            Object.defineProperty(window, "nextmusicApi", {
+                configurable: true,
+                enumerable: true,
+                get() {
+                    return _api;
+                },
+                set(val) {
+                    _api = val ? wrapApi(val) : val;
+                },
+            });
+        } catch (e) {
+            const pollId = setInterval(function () {
+                if (
+                    window.nextmusicApi &&
+                    !window.nextmusicApi.__fckCensorPatched
+                ) {
+                    wrapApi(window.nextmusicApi);
+                    clearInterval(pollId);
+                }
+            }, 200);
+        }
+    })();
+
+    // ── patch downloadInfo in-place ───────────────────────────────────────────
+    function patchInfo(info, replacedUrl) {
+        if (!info?.downloadInfo) return info;
+        const di = info.downloadInfo;
+        di.url = replacedUrl;
+        di.urls = [replacedUrl];
+        di.transport = "raw";
+        di.codec = "mp3";
+        di.key = "";
+        return info;
     }
 
     // ── constants ─────────────────────────────────────────────────────────────
@@ -89,12 +341,10 @@
     const LOCAL_GITHUB_CACHE_URL =
         "http://localhost:2007/assets/list_hazzz895.json?name=FckCensor%20Next&";
 
-    // ── cache save via nextmusicApi ───────────────────────────────────────────
+    // ── save cache via nextmusicApi ───────────────────────────────────────────
     function saveCache(sourceUrl, fileName) {
         try {
-            if (!window.nextmusicApi?.downloadAsset) {
-                return;
-            }
+            if (!window.nextmusicApi?.downloadAsset) return;
             window.nextmusicApi
                 .downloadAsset(sourceUrl, fileName, ADDON_NAME)
                 .catch(() => {});
@@ -102,7 +352,6 @@
     }
 
     // ── fetch helpers ─────────────────────────────────────────────────────────
-
     function fetchGist() {
         return fetch(GIST_URL)
             .then(function (r) {
@@ -201,62 +450,38 @@
     }
 
     proto.getFileInfo = async function (params, options) {
+        const result = await originalGetFileInfo.apply(this, arguments);
         try {
             const trackId = String(params?.trackId);
-            const replaced = getReplaced(trackId);
-            if (replaced) {
-                return makeDownloadInfo(trackId, replaced.url, params?.quality);
+            const replacedUrl = getReplaced(trackId);
+            if (replacedUrl) {
+                patchInfo(result, replacedUrl);
+                applyDuration(trackId, replacedUrl);
             }
         } catch (e) {}
-        return originalGetFileInfo.apply(this, arguments);
+        return result;
     };
 
     proto.getFileInfoBatch = async function (params, options) {
+        const result = await originalGetFileInfoBatch.apply(this, arguments);
         try {
             const rawIds = params?.trackIds ?? [];
             const isSingle = !Array.isArray(rawIds);
             const trackIds = isSingle ? [String(rawIds)] : rawIds.map(String);
+            const infos = result?.downloadInfos ?? [];
 
-            const hasAnyReplaced = trackIds.some((id) => !!getReplaced(id));
-
-            if (hasAnyReplaced) {
-                const missing = trackIds.filter((id) => !getReplaced(id));
-                let missingMap = {};
-
-                if (missing.length > 0) {
-                    const originalParams = Object.assign({}, params, {
-                        trackIds: isSingle ? missing[0] : missing,
-                    });
-                    try {
-                        let originalResults =
-                            await originalGetFileInfoBatch.call(
-                                this,
-                                originalParams,
-                                options,
-                            );
-                        if (!Array.isArray(originalResults))
-                            originalResults = [originalResults];
-                        missing.forEach(function (id, i) {
-                            missingMap[id] = originalResults[i] ?? null;
-                        });
-                    } catch (e) {}
+            trackIds.forEach(function (id, i) {
+                const replacedUrl = getReplaced(id);
+                if (replacedUrl && infos[i]) {
+                    infos[i].url = replacedUrl;
+                    infos[i].urls = [replacedUrl];
+                    infos[i].transport = "raw";
+                    infos[i].codec = "mp3";
+                    infos[i].key = "";
+                    applyDuration(id, replacedUrl);
                 }
-
-                const results = trackIds.map(function (id) {
-                    const replaced = getReplaced(id);
-                    if (replaced) {
-                        return makeDownloadInfo(
-                            id,
-                            replaced.url,
-                            params?.quality,
-                        );
-                    }
-                    return missingMap[id] ?? null;
-                });
-
-                return isSingle ? results[0] : results;
-            }
+            });
         } catch (e) {}
-        return originalGetFileInfoBatch.apply(this, arguments);
+        return result;
     };
 })();
