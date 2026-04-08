@@ -3,7 +3,7 @@
 * This add-on allows bypassing censorship by replacing the MP3 file of the currently playing track.
 
 ## Available tracks
-**[Open track list](https://gist.github.com/Diramix/c356a73d2d36d218b5cbd67651e387c0)**
+**[Open track list](https://nextmusic.diram1x.ru/fckcensor-next)**
 
 Mapping:
 `trackId => mp3Url`
@@ -21,7 +21,7 @@ npm run build
 ```
 
 > [!IMPORTANT]
-> The build `nm.tar.gz` is intended for [Next Music](https://github.com/Web-Next-Music/Next-Music-Client).
+> The build `nm.tar.gz` is intended for [Next Music](https://nextmusic.diram1x.ru/).
 
 ## Special thanks to the original author of the "FckCensor" script
 
