@@ -1,6 +1,9 @@
 import type { NextMusicApi } from "./api";
 
-export type WebpackRequire = (id: number) => any;
+export interface WebpackRequire {
+	(id: number | string): any;
+	m?: Record<string, unknown>;
+}
 
 export type WebpackChunkEntry = [
 	symbol[],

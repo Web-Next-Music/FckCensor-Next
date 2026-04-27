@@ -16,7 +16,8 @@ import type {
 (function (): void {
 	let webpackGlobal: WebpackChunk;
 	let appRequire: WebpackRequire | undefined;
-	let fileInfoModule: { v?: { prototype: FileInfoServiceProto } };
+	let fileInfoModule: { v?: { prototype: FileInfoServiceProto } } | undefined;
+	const ADDON_PREFIX = "[FckCensor]";
 
 	try {
 		webpackGlobal = (window as any).webpackChunk_N_E;
@@ -44,20 +45,57 @@ import type {
 	}
 
 	if (!appRequire) {
-		console.error("[FckCensor] appRequire is null, aborting");
+		console.error(`${ADDON_PREFIX} appRequire is null, aborting`);
 		return;
 	}
 
-	try {
-		fileInfoModule = appRequire(63974);
-	} catch (e) {
-		console.error("[FckCensor] Failed to require module 63974:", e);
-		return;
+	function isFileInfoModuleCandidate(
+		mod: unknown,
+	): mod is { v?: { prototype: FileInfoServiceProto } } {
+		const proto = (mod as { v?: { prototype?: FileInfoServiceProto } })?.v
+			?.prototype;
+		return (
+			!!proto &&
+			typeof proto.getFileInfo === "function" &&
+			typeof proto.getFileInfoBatch === "function"
+		);
 	}
+
+	function findWebpackModule<T>(
+		predicate: (mod: unknown) => mod is T,
+	): T | null {
+		const moduleMap = appRequire?.m;
+		if (!moduleMap) {
+			console.error(`${ADDON_PREFIX} appRequire.m is unavailable`);
+			return null;
+		}
+
+		for (const moduleId of Object.keys(moduleMap)) {
+			try {
+				const mod = appRequire?.(moduleId);
+				if (predicate(mod)) {
+					console.log(
+						`${ADDON_PREFIX} Found webpack module for patch:`,
+						moduleId,
+					);
+					return mod;
+				}
+			} catch (e) {
+				console.debug(
+					`${ADDON_PREFIX} Failed to inspect webpack module ${moduleId}:`,
+					e,
+				);
+			}
+		}
+
+		return null;
+	}
+
+	fileInfoModule = findWebpackModule(isFileInfoModuleCandidate) ?? undefined;
 
 	if (!fileInfoModule?.v) {
 		console.error(
-			"[FckCensor] FileInfo module (63974) has no .v, aborting",
+			`${ADDON_PREFIX} FileInfo module not found, aborting. Wait for addon update.`,
 		);
 		return;
 	}
