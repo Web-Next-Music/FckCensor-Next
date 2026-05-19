@@ -19,6 +19,6 @@
 		}
 	},
 	"devDependencies": {
-		"@diram1x/ymtm": "^3.3.1"
+		"@diram1x/ymtm": "^3.4.3"
 	}
 }
