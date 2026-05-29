@@ -2,7 +2,7 @@
 node_modules/
 dist/
 release/
-package-lock.json
+pnpm-lock.yaml
 
 # assets
 list.m3u
