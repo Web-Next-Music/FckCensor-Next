@@ -1,6 +1,4 @@
-import type { Track } from "./types/track";
-import type { NextMusicApi } from "./types/api";
-import type { M3UResult } from "./types/m3u";
+import type { M3UResult } from "../types/m3u";
 import type {
 	WebpackRequire,
 	WebpackChunk,
@@ -10,17 +8,43 @@ import type {
 	GetFileInfoBatchParams,
 	FileInfoResult,
 	FileInfoBatchResult,
-	PatchedNextMusicApi,
-} from "./types/script";
+} from "../types/script";
+
+declare const unsafeWindow: Window & typeof globalThis;
+declare function GM_xmlhttpRequest(details: {
+	method: string;
+	url: string;
+	responseType?: string;
+	onload?(res: { status: number; responseText: string; response: unknown }): void;
+	onerror?(err: unknown): void;
+}): void;
+
+interface GmResponse {
+	ok: boolean;
+	status: number;
+	text(): Promise<string>;
+	json(): Promise<unknown>;
+}
+
+interface AudioData {
+	blobUrl: string;
+	durationMs: number | null;
+}
 
 (function (): void {
+	// In sandboxed TM context (any @grant other than none), window ≠ page window.
+	const pw =
+		typeof unsafeWindow !== "undefined"
+			? (unsafeWindow as any)
+			: (window as any);
+
 	let webpackGlobal: WebpackChunk;
 	let appRequire: WebpackRequire | undefined;
 	let fileInfoModule: { v?: { prototype: FileInfoServiceProto } } | undefined;
 	const ADDON_PREFIX = "[FckCensor]";
 
 	try {
-		webpackGlobal = (window as any).webpackChunk_N_E;
+		webpackGlobal = pw.webpackChunk_N_E;
 		if (!webpackGlobal) {
 			console.error("[FckCensor] webpackChunk_N_E not found, aborting");
 			return;
@@ -178,44 +202,6 @@ import type {
 		return { tracks: result };
 	}
 
-	const durationCache: Record<string, number> = {};
-
-	function fetchDuration(url: string): Promise<number | null> {
-		if (durationCache[url] !== undefined) {
-			return Promise.resolve(durationCache[url]);
-		}
-
-		return fetch(url)
-			.then((r) => r.arrayBuffer())
-			.then(
-				(buf) =>
-					new Promise<number>((resolve, reject) => {
-						try {
-							const AudioContextClass =
-								window.AudioContext ||
-								((window as any)
-									.webkitAudioContext as typeof AudioContext);
-							const ctx = new AudioContextClass();
-							ctx.decodeAudioData(
-								buf,
-								(decoded: AudioBuffer) => {
-									ctx.close();
-									durationCache[url] = decoded.duration;
-									resolve(decoded.duration);
-								},
-								reject,
-							);
-						} catch (e) {
-							reject(e);
-						}
-					}),
-			)
-			.catch((e) => {
-				console.warn("[FckCensor] fetchDuration failed:", e);
-				return null;
-			});
-	}
-
 	function patchEntityList(
 		entityList: QueueEntityEntry[],
 		id: string,
@@ -241,7 +227,7 @@ import type {
 		let patched = 0;
 
 		try {
-			const players: any[] = (window as any)._ymPlayers ?? [];
+			const players: any[] = pw._ymPlayers ?? [];
 			for (const player of players) {
 				const entityList: QueueEntityEntry[] | undefined =
 					player?.queueController?.playerQueue?.queueState?.entityList
@@ -258,7 +244,8 @@ import type {
 			const VE = appRequire?.(46663)?.VE;
 			if (!VE) return;
 
-			const rootEl = document.getElementById("__next") ?? document.body;
+			const rootEl =
+				document.getElementById("__next") ?? document.body;
 			const fiberKey = Object.keys(rootEl).find((k) =>
 				k.startsWith("__reactFiber"),
 			);
@@ -268,7 +255,8 @@ import type {
 				obj: unknown,
 				visited = new Set<object>(),
 			): void => {
-				if (!obj || typeof obj !== "object" || visited.has(obj)) return;
+				if (!obj || typeof obj !== "object" || visited.has(obj))
+					return;
 				visited.add(obj);
 
 				if (Array.isArray(obj)) {
@@ -300,7 +288,11 @@ import type {
 						fiber.stateNode?.queueController?.playerQueue
 							?.queueState?.entityList?.value;
 					if (Array.isArray(entityList)) {
-						patched += patchEntityList(entityList, id, durationMs);
+						patched += patchEntityList(
+							entityList,
+							id,
+							durationMs,
+						);
 					}
 				}
 
@@ -321,111 +313,90 @@ import type {
 		}
 	}
 
-	(window as any).__fckCensorDuration =
-		(window as any).__fckCensorDuration ?? {};
-	const _fckPendingDuration = new Set<string>();
+	// Download audio via GM_xmlhttpRequest (bypasses page CSP), create a blob URL
+	// (allowed by media-src blob:), and extract duration from the same arraybuffer.
+	// Results are cached so repeated plays don't re-download.
+	const audioCache: Record<string, AudioData> = {};
+	const audioPending: Record<string, Promise<AudioData | null>> = {};
 
-	function applyDuration(
-		trackId: string | number,
-		replacedUrl: string,
-	): void {
-		const id = String(trackId);
-		_fckPendingDuration.add(id);
+	function processRemoteAudio(url: string): Promise<AudioData | null> {
+		if (audioCache[url]) return Promise.resolve(audioCache[url]);
+		if (audioPending[url]) return audioPending[url];
 
-		fetchDuration(replacedUrl).then((dur) => {
-			if (dur == null) {
-				_fckPendingDuration.delete(id);
-				return;
-			}
+		audioPending[url] = new Promise<AudioData | null>((resolve) => {
+			GM_xmlhttpRequest({
+				method: "GET",
+				url,
+				responseType: "arraybuffer",
+				onload(res) {
+					if (res.status < 200 || res.status >= 300) {
+						console.warn(
+							"[FckCensor] processRemoteAudio HTTP",
+							res.status,
+							url,
+						);
+						resolve(null);
+						return;
+					}
 
-			const durationMs = Math.round(dur * 1000);
-			(window as any).__fckCensorDuration[id] = durationMs;
+					try {
+						const buf = res.response as ArrayBuffer;
+						// Blob copies the data — buf can be safely detached by decodeAudioData after this
+						const blob = new Blob([buf], { type: "audio/mpeg" });
+						const blobUrl = URL.createObjectURL(blob);
 
-			patchQueueDuration(trackId, durationMs);
-			for (const delay of [300, 800, 1500]) {
-				setTimeout(
-					() => patchQueueDuration(trackId, durationMs),
-					delay,
-				);
-			}
-
-			_fckPendingDuration.delete(id);
-		});
-	}
-
-	(function patchNextmusicApi(): void {
-		function wrapApi(api: PatchedNextMusicApi): PatchedNextMusicApi {
-			if (api.__fckCensorPatched) return api;
-			api.__fckCensorPatched = true;
-
-			const origGetCurrentTrack = api.getCurrentTrack.bind(api);
-
-			api.getCurrentTrack = function (): Track | undefined {
-				const track = origGetCurrentTrack();
-				if (!track) return track;
-
-				const id = String(track.id ?? "");
-				const overrideDurationMs = (window as any).__fckCensorDuration[
-					id
-				] as number | undefined;
-				const isPending = _fckPendingDuration.has(id);
-
-				if (overrideDurationMs == null && !isPending) return track;
-
-				const patch: Partial<Track> = {
-					durationMs: overrideDurationMs ?? track.durationMs,
-				};
-
-				if (isPending && track.coverUrl) {
-					patch.coverUrl = track.coverUrl + "#fck_pending";
-				}
-
-				return Object.assign({}, track, patch);
-			};
-
-			return api;
-		}
-
-		if ((window as any).nextmusicApi) {
-			wrapApi((window as any).nextmusicApi as PatchedNextMusicApi);
-			return;
-		}
-
-		let _api: PatchedNextMusicApi | undefined;
-
-		try {
-			Object.defineProperty(window, "nextmusicApi", {
-				configurable: true,
-				enumerable: true,
-				get(): PatchedNextMusicApi | undefined {
-					return _api;
+						try {
+							const AudioContextClass =
+								pw.AudioContext ||
+								(pw.webkitAudioContext as typeof AudioContext);
+							const ctx = new AudioContextClass();
+							ctx.decodeAudioData(
+								buf,
+								(decoded: AudioBuffer) => {
+									ctx.close();
+									resolve({
+										blobUrl,
+										durationMs: Math.round(
+											decoded.duration * 1000,
+										),
+									});
+								},
+								() => resolve({ blobUrl, durationMs: null }),
+							);
+						} catch {
+							resolve({ blobUrl, durationMs: null });
+						}
+					} catch (e) {
+						console.warn(
+							"[FckCensor] processRemoteAudio blob failed:",
+							e,
+						);
+						resolve(null);
+					}
 				},
-				set(val: PatchedNextMusicApi) {
-					_api = val ? wrapApi(val) : val;
+				onerror(e) {
+					console.warn("[FckCensor] processRemoteAudio GM error:", e);
+					resolve(null);
 				},
 			});
-		} catch {
-			const pollId = setInterval(() => {
-				const api = (window as any).nextmusicApi as
-					| PatchedNextMusicApi
-					| undefined;
-				if (api && !api.__fckCensorPatched) {
-					wrapApi(api);
-					clearInterval(pollId);
-				}
-			}, 200);
-		}
-	})();
+		}).then((data) => {
+			if (data) audioCache[url] = data;
+			delete audioPending[url];
+			return data;
+		});
+
+		return audioPending[url];
+	}
 
 	function patchInfo(
 		info: FileInfoResult,
-		replacedUrl: string,
+		blobUrl: string,
 	): FileInfoResult {
 		if (!info?.downloadInfo) return info;
 
 		const di = info.downloadInfo;
-		di.url = replacedUrl;
-		di.urls = [replacedUrl];
+		di.url = blobUrl;
+		di.urls = [blobUrl];
 		di.transport = "raw";
 		di.codec = "mp3";
 		di.key = "";
@@ -433,41 +404,51 @@ import type {
 		return info;
 	}
 
-	const ADDON_NAME = "FckCensor Next";
+	// GM_xmlhttpRequest bypasses the page's CSP connect-src restrictions.
+	function gmFetch(url: string): Promise<GmResponse> {
+		return new Promise((resolve, reject) => {
+			GM_xmlhttpRequest({
+				method: "GET",
+				url,
+				onload(res) {
+					const text = res.responseText;
+					resolve({
+						ok: res.status >= 200 && res.status < 300,
+						status: res.status,
+						text: () => Promise.resolve(text),
+						json: () => {
+							try {
+								return Promise.resolve(JSON.parse(text));
+							} catch (e) {
+								return Promise.reject(e);
+							}
+						},
+					});
+				},
+				onerror: reject,
+			});
+		});
+	}
+
 	const GIST_URL =
 		"https://api.github.com/gists/5db074aec38196af20d7dc19be4cdd50";
 	const GITHUB_RAW_URL =
 		"https://raw.githubusercontent.com/Hazzz895/FckCensorData/refs/heads/main/list.json";
-	const LOCAL_GIST_CACHE_URL =
-		"http://localhost:2007/assets/list.m3u?name=FckCensor%20Next&";
-	const LOCAL_GITHUB_CACHE_URL =
-		"http://localhost:2007/assets/list.json?name=FckCensor%20Next&";
-
-	function saveCache(sourceUrl: string, fileName: string): void {
-		try {
-			const api = (window as any).nextmusicApi as
-				| NextMusicApi
-				| undefined;
-			api?.downloadAsset?.(sourceUrl, fileName, ADDON_NAME)?.catch(
-				() => {},
-			);
-		} catch {}
-	}
 
 	function fetchGistM3U(): Promise<(M3UResult & { rawUrl?: string }) | null> {
-		return fetch(GIST_URL)
+		return gmFetch(GIST_URL)
 			.then((r) => {
 				if (!r.ok) throw new Error("Gist HTTP " + r.status);
 				return r.json();
 			})
-			.then((data: { files?: Record<string, { raw_url?: string }> }) => {
-				const file =
-					data.files?.["list.m3u"] ?? data.files?.["list.m3u8"];
+			.then((data) => {
+				const d = data as { files?: Record<string, { raw_url?: string }> };
+				const file = d.files?.["list.m3u"] ?? d.files?.["list.m3u8"];
 				if (!file?.raw_url)
 					throw new Error("list.m3u not found in gist");
 
 				const rawUrl = file.raw_url;
-				return fetch(rawUrl)
+				return gmFetch(rawUrl)
 					.then((r2) => {
 						if (!r2.ok)
 							throw new Error("Gist raw HTTP " + r2.status);
@@ -491,43 +472,21 @@ import type {
 	}
 
 	function fetchGithubJson(): Promise<M3UResult | null> {
-		return fetch(GITHUB_RAW_URL)
+		return gmFetch(GITHUB_RAW_URL)
 			.then((r) => {
 				if (!r.ok) throw new Error("GitHub Raw HTTP " + r.status);
 				return r.json();
 			})
-			.then((parsed: { tracks?: Record<string, string> }) => {
-				if (!parsed?.tracks)
+			.then((parsed) => {
+				const p = parsed as { tracks?: Record<string, string> };
+				if (!p?.tracks)
 					throw new Error("No .tracks in GitHub Raw response");
-				return { tracks: parsed.tracks };
+				return { tracks: p.tracks };
 			})
 			.catch((e) => {
 				console.warn("[FckCensor] fetchGithubJson failed:", e);
 				return null;
 			});
-	}
-
-	function fetchLocalM3UCache(url: string): Promise<M3UResult> {
-		return fetch(url)
-			.then((r) => {
-				if (!r.ok) throw new Error();
-				return r.text();
-			})
-			.then((text) => parseM3U(text))
-			.catch(() => ({ tracks: {} }));
-	}
-
-	function fetchLocalJsonCache(url: string): Promise<Record<string, string>> {
-		return fetch(url)
-			.then((r) => {
-				if (!r.ok) throw new Error();
-				return r.json();
-			})
-			.then((parsed: { tracks?: Record<string, string> }) => {
-				if (!parsed?.tracks) throw new Error();
-				return parsed.tracks;
-			})
-			.catch(() => ({}));
 	}
 
 	Promise.all([fetchGistM3U(), fetchGithubJson()])
@@ -540,28 +499,14 @@ import type {
 				const gistTracks = gistOk ? gistResult.tracks : {};
 				remoteTracks = Object.assign({}, githubTracks, gistTracks);
 
-				if (gistOk) saveCache(gistResult.rawUrl!, "list.m3u");
-				if (githubOk) saveCache(GITHUB_RAW_URL, "list.json");
-
 				console.log(
 					"[FckCensor] Loaded tracks:",
 					Object.keys(remoteTracks).length,
 				);
 			} else {
-				Promise.all([
-					fetchLocalM3UCache(LOCAL_GIST_CACHE_URL),
-					fetchLocalJsonCache(LOCAL_GITHUB_CACHE_URL),
-				]).then(([m3uCache, jsonCache]) => {
-					remoteTracks = Object.assign(
-						{},
-						jsonCache,
-						m3uCache.tracks,
-					);
-					console.log(
-						"[FckCensor] Loaded tracks from cache:",
-						Object.keys(remoteTracks).length,
-					);
-				});
+				console.warn(
+					"[FckCensor] Failed to load tracks from all sources",
+				);
 			}
 		})
 		.catch((e) =>
@@ -594,8 +539,23 @@ import type {
 			const trackId = String(params?.trackId);
 			const replacedUrl = getReplaced(trackId);
 			if (replacedUrl) {
-				patchInfo(result, replacedUrl);
-				applyDuration(trackId, replacedUrl);
+				const audioData = await processRemoteAudio(replacedUrl);
+				if (audioData) {
+					patchInfo(result, audioData.blobUrl);
+					if (audioData.durationMs != null) {
+						patchQueueDuration(trackId, audioData.durationMs);
+						for (const delay of [300, 800, 1500]) {
+							setTimeout(
+								() =>
+									patchQueueDuration(
+										trackId,
+										audioData.durationMs!,
+									),
+								delay,
+							);
+						}
+					}
+				}
 			}
 		} catch {}
 
@@ -619,18 +579,35 @@ import type {
 				: [String(rawIds)];
 			const infos = result?.downloadInfos ?? [];
 
-			trackIds.forEach((id, i) => {
-				const replacedUrl = getReplaced(id);
-				if (!replacedUrl || !infos[i]) return;
+			await Promise.all(
+				trackIds.map(async (id, i) => {
+					const replacedUrl = getReplaced(id);
+					if (!replacedUrl || !infos[i]) return;
 
-				infos[i].url = replacedUrl;
-				infos[i].urls = [replacedUrl];
-				infos[i].transport = "raw";
-				infos[i].codec = "mp3";
-				infos[i].key = "";
+					const audioData = await processRemoteAudio(replacedUrl);
+					if (!audioData) return;
 
-				applyDuration(id, replacedUrl);
-			});
+					infos[i].url = audioData.blobUrl;
+					infos[i].urls = [audioData.blobUrl];
+					infos[i].transport = "raw";
+					infos[i].codec = "mp3";
+					infos[i].key = "";
+
+					if (audioData.durationMs != null) {
+						patchQueueDuration(id, audioData.durationMs);
+						for (const delay of [300, 800, 1500]) {
+							setTimeout(
+								() =>
+									patchQueueDuration(
+										id,
+										audioData.durationMs!,
+									),
+								delay,
+							);
+						}
+					}
+				}),
+			);
 		} catch {}
 
 		return result;
