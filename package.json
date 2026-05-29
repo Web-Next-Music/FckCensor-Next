@@ -30,6 +30,7 @@
 			"connect": ["api.github.com", "raw.githubusercontent.com"]
 		}
 	},
+	"packageManager": "pnpm@11.4.0",
 	"devDependencies": {
 		"@diram1x/ymtm": "^3.5.0"
 	}

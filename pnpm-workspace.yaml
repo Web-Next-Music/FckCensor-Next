@@ -1,0 +1,6 @@
+packages: []
+allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
+minimumReleaseAgeExclude:
+  - '@diram1x/ymtm@3.5.0'
