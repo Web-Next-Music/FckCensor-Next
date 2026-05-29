@@ -22,16 +22,21 @@
 		}
 	},
 	"web": {
-		"onefile": {
-			"artifactName": "${addon.name}_${addon.version}_${build.package}.user.js"
-		},
 		"userscript": {
-			"grant": ["GM_xmlhttpRequest", "unsafeWindow"],
-			"connect": ["api.github.com", "raw.githubusercontent.com"]
+			"artifactName": "${addon.name}_${addon.version}_${build.package}.user.js",
+			"icon": "https://github.com/Web-Next-Music/FckCensor-Next/blob/main/src/icon.webp?raw=true",
+			"grant": [
+				"GM_xmlhttpRequest",
+				"unsafeWindow"
+			],
+			"connect": [
+				"api.github.com",
+				"raw.githubusercontent.com"
+			]
 		}
 	},
-	"packageManager": "pnpm@11.4.0",
+	"packageManager": "pnpm@11.5.0",
 	"devDependencies": {
-		"@diram1x/ymtm": "^3.5.0"
+		"@diram1x/ymtm": "^3.6.0"
 	}
 }
