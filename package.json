@@ -8,13 +8,14 @@
 		"dev": "nmtools dev",
 		"build": "nmtools build",
 		"build:nm": "nmtools build nextmusic",
-		"build:web": "nmtools build web"
+		"build:web": "nmtools build web",
+		"typecheck": "tsc --noEmit",
+		"lint": "biome check .",
+		"format": "biome format --write .",
+		"check": "pnpm run typecheck && pnpm run lint && pnpm run test"
 	},
 	"build": {
-		"targets": [
-			"nextmusic",
-			"web"
-		]
+		"targets": ["nextmusic", "web"]
 	},
 	"nextmusic": {
 		"tarGz": {
@@ -25,18 +26,15 @@
 		"userscript": {
 			"artifactName": "${addon.name}_${addon.version}_${build.package}.user.js",
 			"icon": "https://github.com/Web-Next-Music/FckCensor-Next/blob/main/src/icon.webp?raw=true",
-			"grant": [
-				"GM_xmlhttpRequest",
-				"unsafeWindow"
-			],
-			"connect": [
-				"api.github.com",
-				"raw.githubusercontent.com"
-			]
+			"grant": ["GM_xmlhttpRequest", "unsafeWindow"],
+			"connect": ["api.github.com", "raw.githubusercontent.com"]
 		}
 	},
 	"packageManager": "pnpm@12.11.2",
 	"devDependencies": {
-		"@web-next-music/nmtools": "^5.0.0"
+		"@biomejs/biome": "^2.5.15",
+		"@web-next-music/nmtools": "^5.0.0",
+		"typescript": "^7.0.2",
+		"vitest": "^5.0.5"
 	}
 }
