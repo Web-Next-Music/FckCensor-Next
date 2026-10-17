@@ -5,5 +5,4 @@ release/
 pnpm-lock.yaml
 
 # assets
-list.m3u
-list.json
+list_v2.json

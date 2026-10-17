@@ -66,6 +66,23 @@ export interface FileInfoBatchResult {
 	downloadInfos?: DownloadInfo[];
 }
 
+export interface QueuePlayer {
+	queueController?: {
+		playerQueue?: {
+			queueState?: { entityList?: { value?: QueueEntityEntry[] } };
+		};
+	};
+}
+
+export type PlaybackWindow = Window &
+	typeof globalThis & {
+		webpackChunk_N_E: WebpackChunk;
+		nextmusicApi?: PatchedNextMusicApi;
+		_ymPlayers?: QueuePlayer[];
+		webkitAudioContext: typeof AudioContext;
+		__fckCensorDuration: Record<string, number>;
+	};
+
 export interface PatchedNextMusicApi extends NextMusicApi {
 	__fckCensorPatched?: boolean;
 }
