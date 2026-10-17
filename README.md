@@ -5,19 +5,16 @@
 ## Available tracks
 **[Open track list](https://nm.diram1x.ru/fckcensor-next)**
 
-Mapping:
-`trackId => mp3Url`
-
 ## Build
 
 1. Install dependencies
 ```
-npm install
+pnpm install
 ```
 
 2. Run build process
 ```
-npm run build
+pnpm build
 ```
 
 > [!IMPORTANT]
