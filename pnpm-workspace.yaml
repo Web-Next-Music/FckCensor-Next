@@ -1,7 +1,7 @@
 packages: []
 allowBuilds:
   '@parcel/watcher': true
+  bun: false
   esbuild: true
 minimumReleaseAgeExclude:
-  - '@diram1x/ymtm@3.5.0'
-  - '@diram1x/ymtm@3.6.0'
+  - '@web-next-music/nmtools@5.0.0'

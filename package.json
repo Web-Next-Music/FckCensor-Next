@@ -5,10 +5,10 @@
 	"author": "Diramix",
 	"license": "ISC",
 	"scripts": {
-		"dev": "ymtm dev",
-		"build": "ymtm build",
-		"build:nm": "ymtm build nextmusic",
-		"build:web": "ymtm build web"
+		"dev": "nmtools dev",
+		"build": "nmtools build",
+		"build:nm": "nmtools build nextmusic",
+		"build:web": "nmtools build web"
 	},
 	"build": {
 		"targets": [
@@ -35,8 +35,8 @@
 			]
 		}
 	},
-	"packageManager": "pnpm@11.5.0",
+	"packageManager": "pnpm@12.11.2",
 	"devDependencies": {
-		"@diram1x/ymtm": "^3.6.0"
+		"@web-next-music/nmtools": "^5.0.0"
 	}
 }
