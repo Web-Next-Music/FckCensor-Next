@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import type { PlaybackWindow } from "./types/script";
 import {
 	findWebpackModule,
@@ -46,12 +47,12 @@ export function createAddonRuntime(
 	try {
 		webpackGlobal = target.webpackChunk_N_E;
 		if (!webpackGlobal) {
-			console.error("[FckCensor] webpackChunk_N_E not found, aborting");
+			logger.error("[FckCensor] webpackChunk_N_E not found, aborting");
 			cleanup.dispose();
 			return null;
 		}
 	} catch (e) {
-		console.error("[FckCensor] Failed to access webpackChunk_N_E:", e);
+		logger.error("[FckCensor] Failed to access webpackChunk_N_E:", e);
 		cleanup.dispose();
 		return null;
 	}
@@ -66,13 +67,13 @@ export function createAddonRuntime(
 		]);
 		webpackGlobal.pop();
 	} catch (e) {
-		console.error("[FckCensor] Failed to get appRequire:", e);
+		logger.error("[FckCensor] Failed to get appRequire:", e);
 		cleanup.dispose();
 		return null;
 	}
 
 	if (!appRequire) {
-		console.error(`${ADDON_PREFIX} appRequire is null, aborting`);
+		logger.error(`${ADDON_PREFIX} appRequire is null, aborting`);
 		cleanup.dispose();
 		return null;
 	}
@@ -97,7 +98,7 @@ export function createAddonRuntime(
 		findWebpackModule(appRequire, isFileInfoModuleCandidate) ?? undefined;
 
 	if (!fileInfoModule?.v) {
-		console.error(
+		logger.error(
 			`${ADDON_PREFIX} FileInfo module not found, aborting. Wait for addon update.`,
 		);
 		cleanup.dispose();
@@ -148,7 +149,7 @@ export function createAddonRuntime(
 		durationPatches.refresh();
 		metadataStore.refresh();
 		trackBadges.refresh();
-		console.log(
+		logger.log(
 			`${ADDON_PREFIX} Loaded ${Object.keys(remoteTracks).length} tracks and ${Object.keys(trackMetadata).length} metadata patches from ${source}`,
 		);
 	}
@@ -159,7 +160,7 @@ export function createAddonRuntime(
 		void fileInfo.getFileInfo;
 		void fileInfo.getFileInfoBatch;
 	} catch (error) {
-		console.error("[FckCensor] Failed to access prototype:", error);
+		logger.error("[FckCensor] Failed to access prototype:", error);
 		cleanup.dispose();
 		return null;
 	}
@@ -193,7 +194,7 @@ export function createAddonRuntime(
 					saveLocalCache(data);
 				})
 				.catch((error) => {
-					console.error(
+					logger.error(
 						`${ADDON_PREFIX} Remote list v2 failed; retaining cache (${Object.keys(remoteTracks).length} tracks):`,
 						error,
 					);

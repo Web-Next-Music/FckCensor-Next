@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type { PlaybackWindow } from "../types/script";
 import { patchDownloadInfo, decodeDuration } from "../playback-shared";
 import { LIST_URL, LIST_TIMEOUT_MS } from "../list-cache";
@@ -93,7 +94,7 @@ interface AudioData {
 								() => finish({ blobUrl, durationMs: null }),
 							);
 						} catch (error) {
-							console.warn(
+							logger.warn(
 								"[FckCensor] processRemoteAudio blob failed:",
 								error,
 							);
@@ -101,7 +102,7 @@ interface AudioData {
 						}
 					},
 					onerror(error) {
-						console.warn(
+						logger.warn(
 							"[FckCensor] processRemoteAudio GM error:",
 							error,
 						);
@@ -115,7 +116,7 @@ interface AudioData {
 					},
 				});
 			} catch (error) {
-				console.warn("[FckCensor] processRemoteAudio failed:", error);
+				logger.warn("[FckCensor] processRemoteAudio failed:", error);
 				finish(null);
 			}
 		})
@@ -130,7 +131,7 @@ interface AudioData {
 				},
 				(error) => {
 					delete audioPending[url];
-					console.warn("[FckCensor] Audio processing failed:", error);
+					logger.warn("[FckCensor] Audio processing failed:", error);
 					return null;
 				},
 			);

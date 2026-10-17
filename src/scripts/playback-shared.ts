@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import type { DownloadInfo, WebpackRequire } from "./types/script";
 
 export function patchDownloadInfo(
@@ -64,18 +65,18 @@ export function findWebpackModule<T>(
 	predicate: (mod: unknown) => mod is T,
 ): T | null {
 	if (!require?.m) {
-		console.error("[FckCensor] appRequire.m is unavailable");
+		logger.error("[FckCensor] appRequire.m is unavailable");
 		return null;
 	}
 	for (const id of Object.keys(require.m)) {
 		try {
 			const mod: unknown = require(id);
 			if (predicate(mod)) {
-				console.log("[FckCensor] Found webpack module for patch:", id);
+				logger.log("[FckCensor] Found webpack module for patch:", id);
 				return mod;
 			}
 		} catch (error) {
-			console.debug(
+			logger.debug(
 				`[FckCensor] Failed to inspect webpack module ${id}:`,
 				error,
 			);
@@ -125,7 +126,7 @@ export function createBoundedDiagnostics(limit = 3) {
 		const count = counts.get(key) ?? 0;
 		if (count >= limit) return;
 		counts.set(key, count + 1);
-		console.warn(
+		logger.warn(
 			`[FckCensor] ${key}${count + 1 === limit ? " (further warnings suppressed)" : ""}:`,
 			error,
 		);

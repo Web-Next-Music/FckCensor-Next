@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type { PlaybackWindow } from "../types/script";
 import {
 	patchDownloadInfo,
@@ -31,7 +32,7 @@ import { createAddonRuntime } from "../addon-runtime";
 				return duration;
 			})
 			.catch((error) => {
-				console.warn("[FckCensor] fetchDuration failed:", error);
+				logger.warn("[FckCensor] fetchDuration failed:", error);
 				return null;
 			})
 			.then((duration) => {

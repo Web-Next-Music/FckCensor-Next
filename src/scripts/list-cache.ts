@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { parseRemoteList } from "./remote-list";
 
 export const LIST_URL =
@@ -28,7 +29,7 @@ export function readListCache(
 		if (cached)
 			use(validatedTracks(JSON.parse(cached)), "localStorage v2 cache");
 	} catch (error) {
-		console.warn("[FckCensor] Cannot read v2 localStorage cache:", error);
+		logger.warn("[FckCensor] Cannot read v2 localStorage cache:", error);
 	}
 }
 
@@ -36,6 +37,6 @@ export function saveLocalCache(data: unknown): void {
 	try {
 		localStorage.setItem(CACHE_KEY, JSON.stringify(data));
 	} catch (error) {
-		console.warn("[FckCensor] Cannot save v2 localStorage cache:", error);
+		logger.warn("[FckCensor] Cannot save v2 localStorage cache:", error);
 	}
 }

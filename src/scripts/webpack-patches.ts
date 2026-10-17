@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { createCleanupStack } from "./patch-utils";
 import type {
 	WebpackChunk,
@@ -48,7 +49,7 @@ export function installWebpackPatch(
 	matches: (source: string) => boolean,
 	patch: (exports: unknown, source: string, require: WebpackRequire) => void,
 	onError: (error: unknown) => void = (error) =>
-		console.warn("[FckCensor] Webpack patch skipped:", error),
+		logger.warn("[FckCensor] Webpack patch skipped:", error),
 ): () => void {
 	let disposed = false;
 	const seen = new WeakSet<Function>();

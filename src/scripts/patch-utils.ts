@@ -1,3 +1,5 @@
+import { createLogger } from "./logger";
+
 export type Cleanup = () => void;
 export type PatchedMethod = (this: any, ...args: any[]) => any;
 
@@ -35,6 +37,7 @@ export function createWarningReporter(
 	}: { maxKeys?: number; perKey?: number } = {},
 ): (key: string, error?: unknown) => void {
 	const counts = new Map<string, number>();
+	const logger = createLogger(target);
 	return (key, error) => {
 		const count = counts.get(key) ?? 0;
 		if (count >= perKey || (!counts.has(key) && counts.size >= maxKeys))
@@ -42,8 +45,8 @@ export function createWarningReporter(
 		counts.set(key, count + 1);
 		try {
 			if (error === undefined)
-				target.console?.warn(`${prefix}${key ? `: ${key}` : ""}`);
-			else target.console?.warn(`${prefix}${key ? ` (${key})` : ""}:`, error);
+				logger.warn(`${prefix}${key ? `: ${key}` : ""}`);
+			else logger.warn(`${prefix}${key ? ` (${key})` : ""}:`, error);
 		} catch {}
 	};
 }
