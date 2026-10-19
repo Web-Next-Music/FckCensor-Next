@@ -57,7 +57,6 @@ export function installAppContexts(
 		if ((isRoot ? root : sonata) === value) return;
 		if (isRoot) root = value;
 		else sonata = value;
-		// Do not apply model changes while React is rendering a provider.
 		void Promise.resolve().then(() => {
 			if (disposed || (isRoot ? root : sonata) !== value) return;
 			for (const callback of Array.from(

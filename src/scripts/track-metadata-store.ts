@@ -95,7 +95,6 @@ export function installTrackMetadataStore(
 		key: string,
 		wrap: (original: Method) => Method,
 	) => {
-		// Metadata hooks must not shadow inherited methods or invoke accessors.
 		const descriptor = Object.getOwnPropertyDescriptor(prototype, key);
 		if (!descriptor || typeof descriptor.value !== "function") return;
 		patchMethod<Method>(prototype, key, wrap);
@@ -142,7 +141,6 @@ export function installTrackMetadataStore(
 				},
 		);
 		if (!schemaProperties(node.type)) return;
-		// Model methods are shared with unrelated models: always gate on schema and tree.
 		const prototype = Object.getPrototypeOf(node.type);
 		patch(
 			prototype,

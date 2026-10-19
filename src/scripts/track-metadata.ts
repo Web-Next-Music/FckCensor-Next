@@ -86,6 +86,26 @@ function merge(target: JsonObject, patch: JsonObject, top: boolean): void {
 	}
 }
 
+export function restoredTrackPatch(
+	track: JsonObject,
+	patch: JsonObject,
+): JsonObject {
+	if (
+		patch.available !== true ||
+		patch.isAvailable !== true ||
+		!Array.isArray(track.disclaimers)
+	)
+		return patch;
+	return {
+		...patch,
+		disclaimers: track.disclaimers.filter(
+			(value) =>
+				typeof value !== "string" ||
+				!value.includes("65256e7f0ec8594f3459e3fa"),
+		),
+	};
+}
+
 export function applyTrackMetadataToTrack<T>(
 	track: T,
 	metadata: TrackMetadataMap,
@@ -98,7 +118,7 @@ export function applyTrackMetadataToTrack<T>(
 		return track;
 	const id = String(track.id);
 	if (!own(metadata, id) || !object(metadata[id])) return track;
-	const patch = metadata[id];
+	const patch = restoredTrackPatch(track, metadata[id]);
 	const previousCover = track.coverUrl;
 	merge(track, patch, true);
 	if (typeof patch.coverUri === "string") {

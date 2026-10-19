@@ -1,0 +1,137 @@
+dialog[data-fckcensor-restore] {
+	box-sizing: border-box;
+	width: min(440px, calc(100vw - 32px));
+	max-height: calc(100vh - 48px);
+	padding: 0;
+	border: 1px solid var(--ym-outline-color-primary-disabled, #ffffff14);
+	border-radius: var(--ym-radius-size-xl, 16px);
+	height: fit-content;
+	inset: 0;
+	margin: auto;
+	position: fixed;
+	backdrop-filter: saturate(180%) blur(0.9375rem);
+	background: var(--ym-background-color-primary-enabled-popover, #1a1a1a);
+	color: var(--ym-controls-color-primary-text-enabled_variant, #e6e6e6);
+	font: inherit;
+	box-shadow: none;
+}
+dialog[data-fckcensor-restore]::backdrop {
+	background: var(--ym-background-color-primary-enabled-overlay, #0008);
+	backdrop-filter: none;
+}
+dialog[data-fckcensor-restore] header {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--ym-spacer-size-xxs, 4px);
+	padding: var(--ym-spacer-size-xl, 20px) var(--ym-spacer-size-l, 16px);
+	color: var(--ym-controls-color-primary-text-enabled_variant, #e6e6e6);
+}
+dialog[data-fckcensor-restore] h3 {
+	flex: 1;
+	margin: 0;
+	padding: 0;
+	color: inherit;
+	font-family: var(--ym-font-heading, inherit);
+	font-size: var(--ym-font-size-headline-s, 22px);
+	line-height: var(--ym-font-line-height-headline-s, 32px);
+	font-weight: var(--ym-font-weight-bold, 700);
+}
+dialog[data-fckcensor-restore] [data-content] {
+	padding: 0 var(--ym-spacer-size-l, 16px) var(--ym-spacer-size-xl, 20px);
+}
+dialog[data-fckcensor-restore] p {
+	margin: 0 0 24px;
+	font-size: 14px;
+	line-height: 1.5;
+	color: var(--ym-controls-color-primary-text-enabled, #999);
+	overflow-wrap: anywhere;
+}
+dialog[data-fckcensor-restore] :is(button, label[data-primary]) {
+	box-sizing: border-box;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	position: static;
+	width: auto;
+	height: 44px;
+	padding: 0 24px;
+	border: 0;
+	border-radius: var(--ym-radius-size-xxxl, 100px);
+	font: inherit;
+	font-size: 14px;
+	font-weight: 600;
+	cursor: pointer;
+}
+dialog[data-fckcensor-restore] label[data-primary] {
+	position: relative;
+	width: 100%;
+	background: var(--ym-controls-color-primary-default-enabled, #ff0);
+	color: var(--ym-controls-color-primary-on_default-enabled, #000);
+}
+dialog[data-fckcensor-restore] label[data-primary]:hover {
+	background: var(--ym-controls-color-primary-default-hovered, #dada0b);
+}
+dialog[data-fckcensor-restore] button[data-close] {
+	position: static;
+	flex-shrink: 0;
+	margin-inline-start: auto;
+	width: 32px;
+	height: 32px;
+	padding: 6px;
+	border-radius: 50%;
+	background: var(--ym-controls-color-secondary-default-enabled, #ffffff14);
+	color: var(--ym-controls-color-primary-text-enabled_variant, #e6e6e6);
+	backdrop-filter: saturate(180%) blur(0.9375rem);
+}
+dialog[data-fckcensor-restore] button[data-close] svg {
+	width: 20px;
+	height: 20px;
+	fill: currentColor;
+}
+dialog[data-fckcensor-restore] button[data-close]:hover {
+	background: var(--ym-controls-color-secondary-default-hovered, #ffffff14);
+}
+dialog[data-fckcensor-restore] button:focus-visible {
+	outline: 2px solid var(--ym-controls-color-primary-default-enabled, #ff0);
+	outline-offset: 4px;
+}
+dialog[data-fckcensor-restore] button:disabled {
+	opacity: 0.5;
+	cursor: wait;
+}
+dialog[data-fckcensor-restore] label[data-primary]:focus-within {
+	outline: 2px solid var(--ym-controls-color-primary-default-enabled, #ff0);
+	outline-offset: 4px;
+}
+dialog[data-fckcensor-restore] label[data-primary]:has(input:disabled) {
+	opacity: 0.5;
+}
+dialog[data-fckcensor-restore] input[data-fckcensor-audio] {
+	display: block;
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	opacity: 0;
+	cursor: pointer;
+}
+
+[data-fckcensor-track-badge] {
+	display: inline-flex;
+	flex-shrink: 0;
+	margin-inline-start: 2px;
+}
+
+[class*="CommonTrack_root"] [class*="PlayButtonWithPosition_root"] {
+	flex-shrink: 0;
+}
+
+[class*="CommonTrack_root"]
+	[class*="PlayButtonWithPosition_root"]
+	> button[class*="PlayButtonWithPosition_playButton__"] {
+	position: absolute !important;
+	flex-shrink: 0;
+	min-inline-size: 1.75rem;
+	inline-size: 1.75rem;
+	block-size: 1.75rem;
+}

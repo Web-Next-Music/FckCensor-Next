@@ -1,5 +1,6 @@
 import {
 	previousMetadataEntity,
+	restoredTrackPatch,
 	type TrackMetadataMap,
 } from "./track-metadata";
 
@@ -131,7 +132,7 @@ export function mergeTrackMetadata(
 	const id = String(value.id);
 	if (!own(metadata, id) || !isRecord(metadata[id])) return value;
 	const normalized = normalizeMetadata(
-		metadata[id],
+		restoredTrackPatch(value, metadata[id]),
 		value,
 		type,
 	) as RecordValue;

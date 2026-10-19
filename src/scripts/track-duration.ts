@@ -36,7 +36,6 @@ const method = (value: RecordValue, key: string): boolean =>
 	typeof value[key] === "function";
 
 function cloneTrackMetadata(meta: RecordValue): RecordValue {
-	// API metadata may be shared or frozen; omit runtime fields before cloning.
 	const plain: RecordValue = {};
 	for (const key of Object.keys(meta))
 		if (!key.startsWith("$"))
@@ -119,8 +118,6 @@ export function installTrackDuration(
 					if (value[key] !== next[key]) value[key] = next[key];
 			}
 		});
-		// Entity wrappers can have their own id and cyclic runtime state.
-		// A failed metadata patch must not prevent reaching their raw data.
 		for (const key of ["entity", "entityData", "data"])
 			safely(() => {
 				if (object(value[key])) update(value[key], seen);
@@ -150,7 +147,6 @@ export function installTrackDuration(
 			factory,
 			"createEntity",
 			(_self, args) => {
-				// Replace the argument rather than mutating metadata owned by the API.
 				if (object(args[0])) {
 					const input = args[0];
 					if (isPlainTrackMetadata(input.meta))
@@ -212,7 +208,6 @@ export function installTrackDuration(
 		if (ms === undefined || meta.durationMs === ms) return;
 		const node = meta.$treenode;
 		if (object(node) && method(node, "applyPatches")) {
-			// Only patch declared MST properties: snapshots silently discard unknown fields.
 			const type = node.type;
 			const properties =
 				object(type) && object(type.properties)

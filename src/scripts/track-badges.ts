@@ -226,16 +226,10 @@ export function installTrackBadges(
 							if (event.key === "Enter" || event.key === " ")
 								event.stopPropagation();
 						},
-						style: {
-							display: "inline-flex",
-							flexShrink: 0,
-							marginInlineStart: 2,
-						},
 					},
 					react.createElement(runtime.icon, {
 						className: classes.explicitMark,
 						variant: "edit",
-						// The application's edit glyph is only available in this size.
 						size: "xxs",
 						"aria-hidden": true,
 					}),

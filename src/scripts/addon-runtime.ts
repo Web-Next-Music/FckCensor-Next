@@ -1,4 +1,6 @@
 import { logger } from "./logger";
+import { patchDownloadInfo } from "./playback-shared";
+import { installLocalTracks } from "./local-tracks";
 import type { PlaybackWindow } from "./types/script";
 import {
 	findWebpackModule,
@@ -11,6 +13,7 @@ import { installAppContexts } from "./app-context";
 import { installTrackDuration } from "./track-duration";
 import { installTrackMetadataStore } from "./track-metadata-store";
 import { installTrackBadges } from "./track-badges";
+
 import type { parseRemoteList } from "./remote-list";
 import type { TrackMetadataMap } from "./track-metadata";
 import type {
@@ -108,15 +111,38 @@ export function createAddonRuntime(
 	let remoteTracks: Record<string, string> = {};
 
 	let trackMetadata: TrackMetadataMap = {};
+	const local = installLocalTracks(target, () => {
+		replacementGuard.refresh();
+		for (const track of local.tracks.values())
+			durationPatches.set(track.id, track.url, track.durationMs);
+		durationPatches.refresh();
+		metadataStore.refresh();
+		trackBadges.refresh();
+	});
+	cleanup.add(() => local.dispose());
+	function combinedMetadata(): TrackMetadataMap {
+		const result = { ...trackMetadata };
+		for (const id of new Set([
+			...Object.keys(remoteTracks),
+			...local.tracks.keys(),
+		]))
+			result[id] = {
+				...result[id],
+				available: true,
+				isAvailable: true,
+				error: undefined,
+			};
+		return result;
+	}
 	const metadataStore = installTrackMetadataStore(
-		() => trackMetadata,
+		combinedMetadata,
 		target,
 		contexts,
 	);
 	cleanup.add(() => metadataStore.dispose());
 	const durationPatches = installTrackDuration(
 		getReplaced,
-		() => trackMetadata,
+		combinedMetadata,
 		contexts,
 		appRequire,
 		webpackGlobal,
@@ -125,6 +151,7 @@ export function createAddonRuntime(
 	cleanup.add(() => durationPatches.dispose());
 	const trackBadges = installTrackBadges(
 		(id) =>
+			local.tracks.has(id) ||
 			Object.prototype.hasOwnProperty.call(remoteTracks, id) ||
 			Object.prototype.hasOwnProperty.call(trackMetadata, id),
 		target,
@@ -135,7 +162,10 @@ export function createAddonRuntime(
 	cleanup.add(() => trackBadges.dispose());
 
 	function getReplaced(trackId: string | number): string | null {
-		return getReplacement(remoteTracks, trackId);
+		return (
+			local.tracks.get(String(trackId))?.url ??
+			getReplacement(remoteTracks, trackId)
+		);
 	}
 
 	const replacementGuard = createReplacementGuard((id) => getReplaced(id));
@@ -172,6 +202,11 @@ export function createAddonRuntime(
 						fileInfo,
 						replace,
 						parallelBatch,
+						async (id) => {
+							await local.ready.catch(() => {});
+							return local.tracks.get(id)?.url ?? undefined;
+						},
+						(id) => getReplacement(remoteTracks, id),
 					),
 				);
 		},
@@ -211,6 +246,8 @@ function installFileInfoReplacement(
 	proto: FileInfoServiceProto,
 	replace: TrackReplacement,
 	parallelBatch = false,
+	localUrl: (id: string) => Promise<string | undefined>,
+	remoteUrl: (id: string) => string | null,
 ): () => void {
 	const cleanup = createCleanupStack();
 	const patch = createMethodPatcher(cleanup.add);
@@ -221,6 +258,21 @@ function installFileInfoReplacement(
 			"getFileInfo",
 			(original) =>
 				async function (this: FileInfoServiceProto, params, options) {
+					const id = String(params?.trackId);
+					const local = await localUrl(id);
+					const url = local ?? remoteUrl(id);
+					if (url) {
+						const downloadInfo = {} as DownloadInfo;
+						patchDownloadInfo(downloadInfo, url);
+						if (!local) {
+							try {
+								await replace(id, downloadInfo);
+							} catch (error) {
+								report("getFileInfo replacement failed", error);
+							}
+						}
+						return { downloadInfo };
+					}
 					const result = await original.call(this, params, options);
 					try {
 						const pending = replace(
@@ -239,6 +291,24 @@ function installFileInfoReplacement(
 			"getFileInfoBatch",
 			(original) =>
 				async function (this: FileInfoServiceProto, params, options) {
+					const ids = normalizeTrackIds(params?.trackIds);
+					const urls = await Promise.all(
+						ids.map(
+							async (id) => (await localUrl(id)) ?? remoteUrl(id),
+						),
+					);
+					if (urls.some(Boolean)) {
+						const downloadInfos = await Promise.all(
+							ids.map(async (id) => {
+								const result = await this.getFileInfo(
+									{ trackId: id },
+									options,
+								);
+								return result.downloadInfo!;
+							}),
+						);
+						return { downloadInfos };
+					}
 					const result = await original.call(this, params, options);
 					try {
 						const ids = normalizeTrackIds(params?.trackIds);
